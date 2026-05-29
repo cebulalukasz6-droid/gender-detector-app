@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gender Detector – automatyczne przypisywanie płci</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(145deg, #f3f4f6 0%, #e5e7eb 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            max-width: 600px;
+            width: 100%;
+            background: white;
+            border-radius: 32px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 8px;
+            color: #1f2937;
+        }
+        .badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-bottom: 20px;
+        }
+        .subhead {
+            color: #6b7280;
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+        .upload-area {
+            border: 2px dashed #d1d5db;
+            border-radius: 24px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 20px;
+        }
+        .upload-area:hover {
+            border-color: #9d4edd;
+            background: #faf5ff;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .btn {
+            background: #9d4edd;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            font-size: 1rem;
+        }
+        .btn:hover {
+            background: #7b2cbf;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #9d4edd;
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e5e7eb;
+            border-top-color: #9d4edd;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .file-name {
+            margin-top: 12px;
+            font-size: 0.85rem;
+            color: #10b981;
+            text-align: center;
+        }
+        .info {
+            background: #f3f4f6;
+            border-radius: 16px;
+            padding: 16px;
+            margin-top: 24px;
+            font-size: 0.85rem;
+            color: #4b5563;
+        }
+        .info code {
+            background: #e5e7eb;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <span class="badge">🎯 gender detector</span>
+        <h1>Automatyczne przypisywanie płci</h1>
+        <div class="subhead">
+            Na podstawie imienia i adresu e-mail.<br>
+            Wgrywasz plik CSV → pobierasz plik z kolumną <code>sex</code> (female / men).
+        </div>
+        
+        <div class="upload-area" id="uploadArea">
+            <div>📁</div>
+            <div>Przeciągnij plik CSV lub kliknij tutaj</div>
+            <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 8px;">
+                Wymagane kolumny: <code>email</code>, <code>firstname</code>
+            </div>
+        </div>
+        <input type="file" id="fileInput" accept=".csv">
+        <div class="file-name" id="fileName"></div>
+        
+        <button class="btn" id="submitBtn">🔍 Określ płeć</button>
+        
+        <div class="loading" id="loading">
+            <span class="spinner"></span> Przetwarzanie... (może potrwać chwilę)
+        </div>
+        
+        <div class="info">
+            <strong>⚡ Jak to działa?</strong><br>
+            1. Pobieramy oficjalne listy imion z rejestru PESEL (API GOV)<br>
+            2. Porównujemy imię klienta – jeśli pasuje → przypisujemy płeć<br>
+            3. Jeśli brak imienia – analizujemy adres e-mail<br>
+            4. Zwracamy plik CSV z dodatkową kolumną <code>sex</code>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        
+        let selectedFile = null;
+        
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#9d4edd';
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.borderColor = '#d1d5db';
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#d1d5db';
+            const files = e.dataTransfer.files;
+            if (files.length) handleFile(files[0]);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        });
+        
+        function handleFile(file) {
+            selectedFile = file;
+            fileName.textContent = `✅ ${file.name}`;
+        }
+        
+        submitBtn.addEventListener('click', async () => {
+            if (!selectedFile) {
+                alert('Wybierz plik CSV');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            
+            loading.style.display = 'block';
+            submitBtn.disabled = true;
+            
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'klienci_z_plcia.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    const error = await response.text();
+                    alert('Błąd: ' + error);
+                }
+            } catch (err) {
+                alert('Wystąpił błąd: ' + err.message);
+            } finally {
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
